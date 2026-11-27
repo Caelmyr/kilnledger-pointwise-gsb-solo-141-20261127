@@ -14,7 +14,7 @@ MAX_PACKET_BYTES = 45 * 1024 * 1024
 MEASUREMENT_KINDS = {
     "color", "comparison", "texture", "glare", "pinholes", "spot", "ruler", "line",
     "marks", "grades", "coverage", "palette", "traverse", "cells", "recipe", "crazing",
-    "phases", "rectify", "relief", "target", "layer",
+    "cracks", "phases", "rectify", "relief", "target", "layer",
 }
 FORMATS = {
     "png": ("image/png", "png"),
@@ -55,7 +55,7 @@ def measurement_rows(kind, result):
         "marks": ("marks",), "grades": ("samples",), "line": ("points",),
         "texture": ("scales",), "color": ("histogram",), "palette": ("swatches",),
         "traverse": ("segments",), "cells": ("cells",), "recipe": ("cells",),
-        "crazing": ("junctions",), "phases": ("phases",), "rectify": ("scale_grid",),
+        "crazing": ("junctions",), "cracks": ("partitions",), "phases": ("phases",), "rectify": ("scale_grid",),
         "relief": ("regions",), "target": ("patches",), "layer": ("stations",),
     }
     for field in collections.get(kind, ()):

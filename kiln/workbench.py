@@ -8,8 +8,8 @@ from pathlib import Path
 from PIL import Image
 
 from . import (
-    archive, boards, calibration, catalog, closeout, comparison, crazing, defects, detail, formulations,
-    layer, recipe, rectify, relief, restoration, samples, series, surface, target,
+    archive, boards, calibration, catalog, closeout, comparison, cracks, crazing, defects, detail,
+    formulations, layer, recipe, rectify, relief, restoration, samples, series, surface, target,
 )
 from .cards import Cards
 from .geometry import Ruler
@@ -46,6 +46,7 @@ ANALYSES = {
     "palette": "样片调色条",
     "recipe": "返烧配方阵列",
     "crazing": "开片方向检查",
+    "cracks": "裂纹归并",
     "phases": "釉相分布",
     "rectify": "试片校直",
     "relief": "双向掠射图",
@@ -245,6 +246,17 @@ class Workbench:
             result, picture = crazing.inspect(image, settings, correction, ruler)
             if flag(settings.get("chart", False), "查看方向图"):
                 picture = crazing.directionality_picture(result)
+        elif kind == "cracks":
+            marks_payload = None
+            marks_id = settings.get("source_marks")
+            if marks_id:
+                record = self.store.entry(key(marks_id, "缺陷图记录"))
+                if record["kind"] != "marks" or record["photo_id"] != photo["id"]:
+                    raise InputError("引用的缺陷图记录需要是当前照片上的缺陷图")
+                support.append((record["id"], record["revision"]))
+                models["marks"] = source_model(record)
+                marks_payload = record["payload"]
+            result, picture = cracks.consolidate(image, settings, ruler, marks_payload)
         elif kind == "phases":
             result, picture = formulations.inspect(image, settings, correction, ruler)
             if flag(settings.get("chart", False), "查看面积柱图"):

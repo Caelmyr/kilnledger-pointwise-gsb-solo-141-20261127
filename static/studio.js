@@ -348,7 +348,7 @@ function drawAnalysis() {
   selection.value=app.tool;
   selection.addEventListener("change",()=>{
     app.tool=selection.value;
-    if (["marks","spot","mask","line","points","rectify","layer"].includes(SPECS[app.tool].type)) drawMode("points");
+    if (["marks","spot","mask","line","points","rectify","layer","cracks"].includes(SPECS[app.tool].type)) drawMode("points");
     drawAnalysis();
   });
   const form=formFields([...spec.fields,toggle("calibrated","采用已归档校色",true)]);
@@ -544,6 +544,8 @@ const METRICS = {
   adjusted_px:"已调整像素",hold_count:"超出检查项",missing_count:"缺少证据",review_count:"需复核格数",
   edition:"卡片状态",output_size:"输出尺寸",pixels_retained:"保留像素",accepted_region_count:"着色片区",
   unique_transcribed:"实物编号数",total_views:"照片位置数",rev:"版本",
+  valid:"合格分法",combinations:"接法组合",segment_count:"裂纹段数",junction_count:"交点数",
+  observation_count:"观察数",adopted:"采用分法",contradiction:"观察冲突",
 };
 
 function hideOutput() {$("#output").hidden=true;app.output=null;}
@@ -753,7 +755,7 @@ function drawRecords() {
       }}});
     checkbox.disabled=entry.kind==="packet";
     const left=node("div",{},[node("strong",{text:entry.title}),
-      node("div",{class:"meta",text:`${LABELS[entry.kind]||entry.kind} · ${entry.updated.slice(0,10)} · v${entry.revision}`})]);
+      node("div",{class:"meta",text:`${LABELS[entry.kind]||entry.kind} · ${entry.updated.slice(0,10)} · v${entry.revision} · ${entry.id}`})]);
     const items=[button("查看",()=>showEntry(entry),"quiet small-button")];
     if(entry.kind==="packet") items.push(link("下载 ZIP",entryArtifact(entry)+"?download=1"));
     const right=node("div",{class:"right"},items);

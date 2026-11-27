@@ -24,6 +24,7 @@ export const SHEETS = {
     glare:{label:"高光识别",help:"检查实底中高亮低彩区域，记录照片反光影响。",fields:[measure("brightness","亮度分界",.81,.2,.99),measure("max_chroma","最大彩度",14,1,80),measure("contrast","局部对比",.08,0,.5)],region:true},
     crazing:{label:"开片方向检查",help:"从暗纹中心估计方向、长度和交叉。",fields:[measure("floor","暗纹强度",.018,.002,.23),measure("scale","纹线宽度",1.45,.8,7),measure("minimum","最小连片",12,3,2300),toggle("chart","显示开片方向图",false)],region:true},
     marks:{label:"缺陷图",help:"顺序标点后选择轮廓、裂纹路径或单点。可继续补其它标注。",fields:[string("name","标注名称","表面复查"),menu("category","缺陷类别",{crack:"裂纹",crawling:"缩釉",blister:"鼓泡",pinholes:"针孔",stain:"色斑",unknown:"未定"},"crack"),menu("shape","标注形状",{trace:"折线",polygon:"封闭轮廓",point:"单点"},"trace"),menu("outcome","后续操作",{observe:"观察",test:"复测",hold:"留置"},"observe"),measure("severity","等级",2,1,4,1)],type:"marks",json:true},
+    cracks:{label:"裂纹归并",help:"把缺陷图上的裂纹段接成整根。交点接法、同条/异条/通外观察、疑点段写在高级设置里；图上按顺序点的位置用作闭环包住检查点。",fields:[measure("margin","通到外边距 px",24,0,600,1)],type:"cracks",json:true},
     spot:{label:"斑点读色",help:"标记斑点中心，比较内圆与周边环带。",fields:[measure("radius","中心半径",18,2,160)],type:"spot"},
     coverage:{label:"实底遮挡",help:"检查透明底、部分覆盖和最大实底内圈。",fields:[measure("alpha_threshold","有效像素阈值",.95,.1,1)],region:true},
     cutout:{label:"底板透底",help:"用亮度区分实物和底板，输出可独立保存的透底图。",fields:[menu("polarity","实物亮度",{dark:"较暗",light:"较亮"},"dark"),measure("minimum_island","最小实物区",18,1,5000),measure("fill_holes","补孔面积上限",0,0,3000),measure("feather","边缘柔化",.7,0,7)],region:true},
@@ -50,7 +51,7 @@ export const LABELS = {...Object.fromEntries(Object.entries(SPECS).map(([k,v])=>
 
 export const CSV_KINDS = new Set([
   "color","comparison","texture","glare","pinholes","spot","ruler","line","marks","grades","coverage","palette",
-  "traverse","cells","recipe","crazing","phases","rectify","relief","target","layer","closeout",
+  "traverse","cells","recipe","crazing","cracks","phases","rectify","relief","target","layer","closeout",
 ]);
 
 const shrink = (photo,x0,y0,x1,y1) => [x0*photo.width,y0*photo.height,x1*photo.width,y1*photo.height].map(Math.round);
@@ -87,6 +88,22 @@ export function extendSettings(code, fields, photo, history, region, points) {
     fields.marks = [{name:fields.name,kind:fields.category,shape:fields.shape,
       outcome:fields.outcome,severity:fields.severity,points:accepted}];
     for (const key of ["name","category","shape","outcome","severity"]) delete fields[key];
+  } else if (spec.type === "cracks") {
+    const q=(a,b,t)=>Math.round(a+(b-a)*t);
+    const [x0,y0,x1,y1]=current, cx=q(x0,x1,.5), cy=q(y0,y1,.5);
+    fields.segments=[
+      {name:"段甲",points:[[q(x0,x1,.18),q(y0,y1,.18)],[cx,cy]]},
+      {name:"段乙",points:[[cx,cy],[q(x0,x1,.82),q(y0,y1,.82)]]},
+      {name:"段丙",points:[[q(x0,x1,.82),q(y0,y1,.18)],[cx,cy]]},
+      {name:"段丁",points:[[cx,cy],[q(x0,x1,.18),q(y0,y1,.82)]]},
+    ];
+    fields.junctions=[{name:"交点1",options:[
+      [[[0,1],[1,0]],[[2,1],[3,0]]],
+      [[[0,1],[3,0]],[[2,1],[1,0]]],
+    ]}];
+    fields.observations=[];
+    fields.focus=0;
+    fields.checks=points.length?coordinates.slice(0,6):[];
   } else if (spec.type === "spot") {
     fields.center = points[0] || [(current[0]+current[2])/2,(current[1]+current[3])/2];
   } else if (spec.type === "mask") {
