@@ -9,7 +9,7 @@ from PIL import Image
 
 from . import (
     archive, boards, calibration, catalog, closeout, comparison, crazing, defects, detail, formulations,
-    layer, recipe, rectify, relief, restoration, samples, series, surface, target,
+    layer, recipe, rectify, relief, refire, reconciliation, restoration, samples, series, surface, target,
 )
 from .cards import Cards
 from .geometry import Ruler
@@ -55,6 +55,7 @@ ANALYSES = {
 NAMES = {
     "tray": "托盘抄录", "cards": "留样卡", "board": "对照展板", "packet": "物证封存",
     "catalog": "已抄录编号图册", "closeout": "留档检核单", "selection": "保存的影像位置",
+    "reconcile": "托盘拼合抄录", "refire": "复烧袋留样卡",
     **ANALYSES,
 }
 
@@ -121,6 +122,7 @@ class Workbench:
         self.store = Store(root)
         self.demonstration = Path(demo)
         self.cards = Cards(self.store, self.open_photo)
+        self.refire_bags = refire.RefireBags(self.store, self.open_photo)
 
     def open_photo(self, record):
         return open_normalized(self.store.require_blob(record["png_sha"]))
@@ -365,6 +367,52 @@ class Workbench:
     def view_tray(self, tray_id):
         _, _, image, tray = self.tray(tray_id)
         return contact_sheet(image, tray)
+
+    def reconcile_trays(self, firing_id, user, save):
+        firing = self.store.firing(firing_id)
+        model = reconciliation.load_request(self.store, firing, user)
+        result = model.solve()
+        if not save:
+            return {"result": result}
+        existing = self.store.entries(firing_id, kind="reconcile")
+        unique = f"reconcile:{firing_id}"
+        payload = {"request": model.payload(), "result": result, "format": "json"}
+        if existing:
+            record = existing[0]
+            entry = self.store.replace_entry(record["id"], record["revision"], model.name, payload)
+        else:
+            entry = self.store.create_entry(
+                firing_id, "reconcile", model.name, payload,
+                references=[view["photo"]["id"] for view in model.views], unique_key=unique,
+            )
+        return {"entry": entry, "result": result}
+
+    def _stored_reconcile(self, entry_id, firing):
+        record = self.store.entry(entry_id)
+        if record["kind"] != "reconcile" or record["firing_id"] != firing["id"]:
+            raise InputError("该记录不是当前窑次的托盘拼合抄录")
+        model = reconciliation.load_request(
+            self.store, firing, {"拼合抄录": record["payload"]["request"]})
+        model.solve()
+        return record, model
+    def refire_suggestions(self, firing_id, data):
+        firing = self.store.firing(firing_id)
+        record, model = self._stored_reconcile(key(data.get("reconcile"), "拼合抄录"), firing)
+        return {"reconcile_id": record["id"], "suggestions": self.refire_bags.suggestions(model)}
+
+    def refire_preview(self, firing_id, data, save):
+        firing = self.store.firing(firing_id)
+        record, model = self._stored_reconcile(key(data.get("reconcile"), "拼合抄录"), firing)
+        payload, content, sources, revisions = self.refire_bags.prepare(
+            firing, model, {"复烧袋留样卡": data})
+        result = {"result": payload, "html": content.decode("utf-8")}
+        if not save:
+            return result
+        entry = self.store.create_entry(
+            firing_id, "refire", payload["title"], payload, artifact=self.store.put_blob(content),
+            references=sources, expected_sources=revisions,
+        )
+        return {"entry": entry, **result}
 
     def cards_artifact(self, firing_id, user, save):
         firing = self.store.firing(firing_id)

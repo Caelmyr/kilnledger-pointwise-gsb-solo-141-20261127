@@ -1,6 +1,8 @@
 export const ROLE = {overview:"全景", detail:"细部", reference:"参考", repeat:"重拍"};
 export const STATE = {unread:"未抄", identified:"已抄", empty:"空格", covered:"遮挡"};
 export const PURPOSE = {retention:"留样", refire:"返烧对照", review:"复查"};
+export const ROTATION_LABEL = {0:"0°", 90:"90°", 180:"180°", 270:"270°"};
+export const STRATEGY = {glaze:"釉面优先", number:"逐格号证优先", balanced:"兼顾（默认）"};
 
 export const measure = (key, label, value, min, max, step = "any") => ({key,label,value,min,max,step,type:"number"});
 export const toggle = (key, label, value) => ({key,label,value,type:"checkbox"});
@@ -46,7 +48,8 @@ export const SHEETS = {
 
 export const SPECS = Object.assign({}, ...Object.values(SHEETS));
 export const LABELS = {...Object.fromEntries(Object.entries(SPECS).map(([k,v])=>[k,v.label])),
-  tray:"托盘抄录",cards:"留样卡",board:"对照展板",packet:"物证封存",catalog:"已抄录图册",closeout:"留档检核单",selection:"保存的影像位置"};
+  tray:"托盘抄录",cards:"留样卡",board:"对照展板",packet:"物证封存",catalog:"已抄录图册",
+  closeout:"留档检核单",selection:"保存的影像位置",reconcile:"托盘拼合抄录",refire:"复烧袋留样卡"};
 
 export const CSV_KINDS = new Set([
   "color","comparison","texture","glare","pinholes","spot","ruler","line","marks","grades","coverage","palette",

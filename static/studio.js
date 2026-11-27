@@ -1,4 +1,4 @@
-import {ROLE, STATE, PURPOSE, SHEETS, SPECS, LABELS, CSV_KINDS, measure, menu, string, toggle,
+import {ROLE, STATE, PURPOSE, SHEETS, SPECS, LABELS, CSV_KINDS, ROTATION_LABEL, STRATEGY, measure, menu, string, toggle,
         centered, anchorPoints, extendSettings} from "./tools.js";
 
 const $ = selector => document.querySelector(selector);
@@ -8,6 +8,8 @@ const app = {
   view:"studio", pane:"analyze", tool:"color", firings:[], firing:null, photos:[], entries:[],
   photo:null, region:null, points:[], draw:"box", dragging:null, zoom:1,
   tray:null, inspected:null, picks:[], kept:new Set(), output:null, lookup:null, busy:0, load:0,
+  reconcileDraft:null, reconcileResult:null, reconcileEntry:null,
+  refireSuggestions:null, refireSelection:null, bagCandidates:[],
 };
 
 function node(tag, options = {}, children = []) {
@@ -187,6 +189,8 @@ async function reload(firingId = app.firing?.id, photoId = app.photo?.id, {full=
   [app.firings,app.firing,app.photos,app.entries] = [list,data.firing,data.photos,data.entries];
   if (newFiring) {
     app.picks=[]; app.kept.clear(); app.lookup=null; app.inspected=null; hideOutput();
+    app.reconcileDraft=null; app.reconcileResult=null; app.reconcileEntry=null;
+    app.refireSuggestions=null; app.refireSelection=null;
   }
   app.photo = app.photos.find(value=>value.id===photoId) || app.photos[0] || null;
   app.tray = selectedTray();
@@ -323,6 +327,7 @@ function drawTools() {
     return;
   }
   if (app.pane==="cards") return drawCards();
+  if (app.pane==="reconcile") return drawReconcile();
   if (!app.photo) {$("#tool-body").replaceChildren(paragraph("选择照片后开始测量。"));return;}
   if (app.pane==="tray") return drawTray();
   drawAnalysis();
@@ -497,6 +502,359 @@ function addPick(tray,pick) {
   $("#picks-count").textContent=String(app.picks.length);
   notice(`已加入 ${tray.title} ${pick.address}`);
 }
+
+// ----------------------------------------------------------- 拼合抄录
+function trayEntries() {
+  return app.entries.filter(entry=>entry.kind==="tray");
+}
+
+function defaultReconcileDraft() {
+  const trays = trayEntries();
+  return {
+    name: app.firing?.name ? app.firing.name + " · 托盘拼合" : "托盘拼合抄录",
+    rows: 4, columns: 4,
+    views: trays.slice(0, 6).map(entry=>({tray: entry.id, rotations:[0,90,180,270]})),
+    clues: [],
+  };
+}
+
+function reconcileCellState(cell) {
+  if (cell.fixed_coupon) return {label: cell.fixed_coupon, tone:"identified"};
+  if (cell.never_seen) return {label:"未见", tone:"unread"};
+  if (cell.empty_in_all) return {label:"空格", tone:"empty"};
+  if (cell.covered_in_all) return {label:"遮挡", tone:"covered"};
+  if (cell.possible_coupons.length) return {label: cell.possible_coupons.length+" 号可能", tone:"unread"};
+  if (cell.possible_states.includes("empty")) return {label:"空/试片", tone:"unread"};
+  return {label:"未知", tone:"unread"};
+}
+
+function drawReconcile() {
+  const wrap = $("#tool-body");
+  const trays = trayEntries();
+  if (trays.length < 3) {
+    wrap.replaceChildren(
+      paragraph("拼合抄录需要同一窑次里至少三张已建立网格的托盘照片。请先在「托盘抄录」里逐张建网格并抄号。"),
+      button("前往托盘抄录",()=>togglePane("tray"),"secondary"));
+    return;
+  }
+  if (!app.reconcileDraft) app.reconcileDraft = defaultReconcileDraft();
+  const draft = app.reconcileDraft;
+  const result = app.reconcileResult;
+
+  const head = node("div",{class:"block-title"},[
+    node("h3",{text:"多照拼合"}),
+    button(result?"重新设置":"建立拼合",reconcileSetupPopup,"secondary small-button"),
+  ]);
+  const children = [head];
+
+  if (!result) {
+    children.push(paragraph("选择三到六张带网格的照片、总盘行列（最多 6×6）、各照允许的直角转向，再补同格/异格/共见线索，然后求全部摆法。"));
+    children.push(summaryList(draft, trays));
+    const saved = app.entries.filter(e=>e.kind==="reconcile");
+    if (saved.length) {
+      children.push(button("载入已保存的拼合（"+saved[0].title+"）",()=>loadSavedReconcile(saved[0]),
+        "secondary small-button","load-reconcile"));
+    }
+    children.push(buttonRow(
+      button("求解全部摆法",event=>action(event,runReconcile),"primary","run-reconcile"),
+      button("编辑线索",reconcileCluePopup,"secondary small-button")));
+    wrap.replaceChildren(...children);
+    return;
+  }
+
+  children.push(paragraph(
+    `共 ${result.solution_count} 种可行摆法` + (result.truncated?`（已达上限 ${result.max_solutions}，仅保留前部分）`:"") +
+    "。点总盘格查看还有哪些已抄号、未编号试片或空位说得通。"));
+  const grid = node("div",{class:"sample-row reconcile-grid","aria-label":"总盘格"});
+  grid.style.setProperty("--tray-columns", result.columns);
+  for (const cell of result.cells) {
+    const state = reconcileCellState(cell);
+    const btn = node("button",{type:"button",class:"cell-button reconcile-cell",
+      dataset:{state:state.tone}, on:{click:()=>showMasterCell(cell)}},
+      [node("strong",{text:cell.address}),node("span",{text:state.label})]);
+    grid.append(btn);
+  }
+  children.push(grid);
+  children.push(buttonRow(
+    button("复烧袋建议",event=>action(event,loadRefireSuggestions),"primary","refire-suggest"),
+    button("编辑线索后重算",reconcileCluePopup,"secondary small-button"),
+    button("更换照片/转向",reconcileSetupPopup,"quiet small-button")));
+  if (app.refireSuggestions) children.push(
+    button("查看复烧袋搭配 ("+app.refireSuggestions.length+")",drawRefirePanel,"secondary small-button"));
+  if (app.reconcileEntry) {
+    children.push(paragraph("已保存为拼合抄录记录，可在「窑次留档」查看。","help"));
+  }
+  wrap.replaceChildren(...children);
+}
+
+function summaryList(draft, trays) {
+  const items = draft.views.map(v=>{
+    const entry = trays.find(t=>t.id===v.tray);
+    const rots = v.rotations.map(r=>ROTATION_LABEL[r]).join("/");
+    return node("li",{class:"list-item"},[
+      node("span",{text: entry ? `${entry.title} · 转向 ${rots}` : "已移除的托盘"}),
+    ]);
+  });
+  return node("div",{},[
+    paragraph(`总盘 ${draft.rows} 行 × ${draft.columns} 列 · ${draft.views.length} 张照片 · ${draft.clues.length} 条线索`),
+    node("ul",{class:"pick-list"},items),
+  ]);
+}
+
+function reconcileSetupPopup() {
+  const trays = trayEntries();
+  const draft = app.reconcileDraft || defaultReconcileDraft();
+  const dims = formFields([
+    {...string("name","拼合名称",draft.name),full:true,required:true},
+    measure("rows","总盘行数",draft.rows,1,6,1), measure("columns","总盘列数",draft.columns,1,6,1),
+  ]);
+  const viewRows = node("div",{class:"form-grid"});
+  const selected = new Set(draft.views.map(v=>v.tray));
+  const rotationInputs = {};
+  for (const entry of trays.slice(0,8)) {
+    const current = draft.views.find(v=>v.tray===entry.id);
+    const checked = selected.has(entry.id);
+    const box = node("input",{type:"checkbox",checked, "aria-label":"选用 "+entry.title});
+    const rotGroup = node("span",{class:"rotation-group"});
+    const rotChecks = {};
+    for (const r of [0,90,180,270]) {
+      const allowed = current ? current.rotations.includes(r) : true;
+      const rb = node("input",{type:"checkbox",checked:allowed, "aria-label":ROTATION_LABEL[r]});
+      rotChecks[r] = rb;
+      rotGroup.append(node("label",{class:"rotation-check"},[rb,node("span",{text:ROTATION_LABEL[r]})]));
+    }
+    rotationInputs[entry.id] = {box, rotChecks};
+    viewRows.append(node("label",{class:"field reconcile-view-row"},[box, node("span",{text:entry.title}), rotGroup]));
+  }
+  const run = button("保存并求解",event=>action(event,async()=>{
+    const values = dims.read();
+    const views = trays.filter(t=>rotationInputs[t.id].box.checked).map(t=>({
+      tray:t.id,
+      rotations:[0,90,180,270].filter(r=>rotationInputs[t.id].rotChecks[r].checked),
+    }));
+    if (views.length<3 || views.length>6) throw new Error("请选择三到六张照片");
+    if (views.some(v=>!v.rotations.length)) throw new Error("每张照片至少保留一个直角转向");
+    app.reconcileDraft = {name:values.name, rows:values.rows, columns:values.columns,
+      views, clues: draft.clues};
+    closeDialog();
+    await runReconcile();
+  },"拼合已求解"),"primary");
+  openDialog("拼合照片与转向",dims.element,viewRows,
+    paragraph("每张照先给一个最可能的转向；求解会在你保留的线索下枚举全部可行摆法。需要多转向时先求解，再回来放宽。"),
+    buttonRow(run));
+}
+
+function reconcileCluePopup() {
+  const draft = app.reconcileDraft || defaultReconcileDraft();
+  const trays = trayEntries();
+  const list = node("ul",{class:"pick-list"});
+  function refresh() {
+    list.replaceChildren(...draft.clues.map((clue,i)=>{
+      const text = clue.kind==="shared"
+        ? `共见 ${clue.count} 格：${refText(clue.a)} ↔ ${refText(clue.b)}`
+        : `${clue.kind==="same"?"同格":"异格"}：${clue.cells.map(refText).join("、")}`;
+      return node("li",{class:"list-item"},[node("span",{text}),
+        button("删除",()=>{draft.clues.splice(i,1);refresh();},"quiet small-button")]);
+    }));
+  }
+  function refText(ref) {
+    const entry = trays.find(t=>t.id===draft.views[ref.view]?.tray);
+    const cell = entry?.payload.cells.find(c=>c.row===ref.row&&c.column===ref.column);
+    return `照片${ref.view+1} ${cell?.address||""}`;
+  }
+  const kind = formFields([menu("kind","线索类型",{same:"同格",different:"异格",shared:"两照共见几格"},"same")]);
+  const viewSelect = index=>{
+    const sel = node("select",{"aria-label":`照片 ${index+1}`});
+    draft.views.forEach((v,i)=>{
+      const entry = trays.find(t=>t.id===v.tray);
+      sel.append(node("option",{value:String(i),text:`照片${i+1} · ${entry?.title||""}`}));
+    });
+    sel.value = String(Math.min(index, Math.max(0, draft.views.length-1)));
+    return sel;
+  };
+  const cellSelect = ()=>node("select",{"aria-label":"照片格"});
+  function fillCells(viewSel, cellSel) {
+    const v = draft.views[Number(viewSel.value)];
+    const entry = trays.find(t=>t.id===v?.tray);
+    cellSel.replaceChildren();
+    entry?.payload.cells.forEach(c=>cellSel.append(
+      node("option",{value:`${c.row}:${c.column}`,text:`${c.address} · ${c.coupon||STATE[c.state]}`})));
+  }
+  const aView = viewSelect(0), aCell = cellSelect();
+  fillCells(aView,aCell);
+  aView.addEventListener("change",()=>fillCells(aView,aCell));
+  const bView = viewSelect(1);
+  if (draft.views.length>1) bView.value="1";
+  const bCell = cellSelect();
+  fillCells(bView,bCell);
+  bView.addEventListener("change",()=>fillCells(bView,bCell));
+  const count = formFields([measure("count","共见格数",1,1,36,1)]);
+  const add = button("加入线索",()=>{
+    const [ar,ac]=aCell.value.split(":").map(Number);
+    const [br,bc]=bCell.value.split(":").map(Number);
+    const k = kind.read().kind;
+    if (k==="shared") {
+      draft.clues.push({kind:"shared", a:{view:Number(aView.value),row:ar,column:ac},
+        b:{view:Number(bView.value),row:br,column:bc}, count:count.read().count});
+    } else {
+      draft.clues.push({kind:k, cells:[
+        {view:Number(aView.value),row:ar,column:ac},
+        {view:Number(bView.value),row:br,column:bc}]});
+    }
+    refresh();
+  },"secondary small-button");
+  refresh();
+  openDialog("同格 / 异格 / 共见线索",
+    kind.element,
+    node("fieldset",{class:"fieldset"},[node("legend",{text:"照片格 A"}),aView,aCell]),
+    node("fieldset",{class:"fieldset"},[node("legend",{text:"照片格 B"}),bView,bCell]),
+    count.element, buttonRow(add),
+    details("已加入的线索",list),
+    button("保存并重算",event=>action(event,async()=>{closeDialog();await runReconcile();},"线索已更新"),"primary"));
+}
+
+async function runReconcile() {
+  const draft = app.reconcileDraft;
+  const data = await api(apiFiring("/reconcile"),{method:"POST",data:{...draft,save:true}});
+  app.reconcileResult = data.result;
+  app.reconcileEntry = data.entry;
+  app.refireSuggestions=null; app.refireSelection=null;
+  drawTools();
+  notice(`求得 ${data.result.solution_count} 种可行摆法`);
+}
+
+function loadSavedReconcile(entry) {
+  const request = entry.payload.request;
+  app.reconcileDraft = {
+    name: request.name, rows: request.rows, columns: request.columns,
+    views: request.views.map(v=>({tray:v.tray, rotations:v.rotations})),
+    clues: request.clues || [],
+  };
+  app.reconcileResult = entry.payload.result;
+  app.reconcileEntry = entry;
+  app.refireSuggestions=null; app.refireSelection=null;
+  drawTools();
+  notice("已载入保存的拼合抄录");
+}
+
+function showMasterCell(cell) {
+  const result = app.reconcileResult;
+  const lines = [
+    paragraph(`总盘格 ${cell.address}`),
+    paragraph(`可能状态：${cell.possible_states.map(s=>STATE[s]||s).join("、") || "无照片覆盖"}`),
+  ];
+  if (cell.possible_coupons.length) {
+    lines.push(node("div",{class:"metric"},[node("span",{text:"说得通的已抄号"}),
+      node("strong",{text:cell.possible_coupons.join("、")})]));
+  }
+  if (cell.fixed_coupon) lines.push(paragraph(`所有摆法都确认是 ${cell.fixed_coupon}。`));
+  if (cell.empty_in_all) lines.push(paragraph("所有摆法里此格都是确认空位。"));
+  if (cell.covered_in_all) lines.push(paragraph("所有摆法里此格都只被遮挡，保持未知。"));
+  if (cell.never_seen) lines.push(paragraph("没有任何照片在可行摆法中覆盖此格。"));
+  if (cell.view_cells.length) {
+    const refs = node("ul",{class:"pick-list"},
+      cell.view_cells.map(label=>node("li",{class:"list-item"},[node("span",{text:label})])));
+    lines.push(details("来自哪些照片格",refs));
+  }
+  const canBag = cell.fixed_coupon && !cell.empty_in_all;
+  const actions = [];
+  if (canBag) actions.push(button("加入复烧袋候选",()=>toggleBagCandidate(cell),"primary small-button"));
+  openDialog(`${cell.address} · 跨摆法可能性`,...lines,buttonRow(...actions,
+    button("关闭",closeDialog,"quiet small-button")));
+}
+
+function toggleBagCandidate(cell) {
+  const pick = {row:cell.row, column:cell.column};
+  if (!app.bagCandidates) app.bagCandidates=[];
+  const existing = app.bagCandidates.findIndex(p=>p.row===pick.row&&p.column===pick.column);
+  if (existing>=0) app.bagCandidates.splice(existing,1);
+  else if (app.bagCandidates.length>=2) app.bagCandidates=[app.bagCandidates[1],pick];
+  else app.bagCandidates.push(pick);
+  closeDialog();
+  notice(app.bagCandidates.length===2?"已选两枚，可生成复烧袋建议":"已选一枚，再选一枚不同格");
+  drawTools();
+}
+
+async function loadRefireSuggestions() {
+  if (!app.reconcileEntry) {notice("请先求解并保存拼合抄录",true);return;}
+  const data = await api(apiFiring("/refire/suggestions"),{method:"POST",
+    data:{reconcile:app.reconcileEntry.id}});
+  app.refireSuggestions = data.suggestions;
+  if (!data.suggestions.length) {
+    notice("当前摆法下没有可签发的两格组合：编号未在全部摆法中固定，或无法确认是两枚不同实物。",true);
+    drawRefirePanel();
+    return;
+  }
+  app.refireSelection = app.refireSuggestions[0];
+  notice(`找到 ${data.suggestions.length} 套可签发搭配`);
+  drawRefirePanel();
+}
+
+function drawRefirePanel() {
+  const wrap = $("#tool-body");
+  const result = app.reconcileResult;
+  if (!result) {drawReconcile();return;}
+  const suggestions = app.refireSuggestions;
+  const children = [
+    node("div",{class:"block-title"},[node("h3",{text:"复烧袋双窗留样卡"}),
+      button("返回总盘",()=>{app.refireSuggestions=null;drawTools();},"quiet small-button")],
+  ];
+  if (!suggestions) {
+    children.push(paragraph("签发条件：所有可行摆法都确认两格是两枚不同实物，且整袋编号集合相同。"));
+    children.push(button("生成可签发建议",event=>action(event,loadRefireSuggestions),"primary"));
+    wrap.replaceChildren(...children);
+    return;
+  }
+  if (!suggestions.length) {
+    children.push(paragraph("没有可签发搭配。现有单照抄录和普通留样卡仍可照常使用，此袋留在待核。"));
+    wrap.replaceChildren(...children);
+    return;
+  }
+  const choiceList = node("div",{class:"pick-list"});
+  suggestions.forEach((s,i)=>{
+    const active = app.refireSelection===s;
+    const degraded = s.windows.some(w=>w.degraded);
+    const label = `${s.group_name} · 格 ${s.windows.map(w=>w.address).join("+")}` +
+      ` · 号证窗 ${s.windows_with_number}/2` + (degraded?" · 含无号证窗":"");
+    choiceList.append(node("button",{type:"button",
+      class:"list-item refire-option"+(active?" active":""),
+      on:{click:()=>{app.refireSelection=s;drawRefirePanel();}}},[node("span",{text:label})]));
+  });
+  children.push(choiceList);
+  const sel = app.refireSelection;
+  children.push(paragraph(
+    `默认「兼顾」：优先保留逐格号证，同档再取釉面实底最高的裁图。若号证窗釉面弱，可切到「釉面优先」，代价是该窗可能失去逐格号证；卡片会注明。`));
+  const strategy = formFields([menu("strategy","选窗策略",STRATEGY,"balanced")]);
+  children.push(strategy.element);
+  const paper = formFields([
+    menu("format","纸张",{a4:"A4",letter:"Letter",a5:"A5"},"a5"),
+    menu("orientation","方向",{landscape:"横向",portrait:"纵向"},"landscape"),
+    measure("columns","每行列数",2,1,2,1), measure("row_size","卡片高度 mm",55,37,108),
+  ]);
+  children.push(details("纸张与版式",paper.element));
+  const preview = button("预览双窗卡",event=>action(event,()=>issueRefire(false,strategy,paper)),"primary");
+  const save = button("保存并下载",event=>action(event,()=>issueRefire(true,strategy,paper)),"secondary");
+  children.push(buttonRow(preview,save));
+  wrap.replaceChildren(...children);
+}
+
+async function issueRefire(persist, strategyForm, paperForm) {
+  const sel = app.refireSelection;
+  const reconcileId = app.reconcileEntry.id;
+  const payload = {
+    reconcile: reconcileId, title: "复烧袋 "+sel.group_name,
+    strategy: strategyForm.read().strategy, picks: sel.picks, paper: paperForm.read(),
+  };
+  const data = await api(apiFiring("/refire/card"),{method:"POST",data:{...payload,save:persist}});
+  if (persist) {
+    await reload(app.firing.id,app.photo?.id);
+    const saved = app.entries.find(e=>e.id===reconcileId);
+    if (saved) await loadSavedReconcile(saved);
+  }
+  showOutput({heading: persist?"复烧袋卡已归档":"复烧袋卡预览",
+    data:data.result, html:data.html, entry:data.entry});
+  return data;
+}
 function paperFields() {
   return [menu("format","纸张",{a4:"A4",letter:"Letter",a5:"A5"},"a4"),
     menu("orientation","方向",{portrait:"纵向",landscape:"横向"},"portrait"),
@@ -544,6 +902,8 @@ const METRICS = {
   adjusted_px:"已调整像素",hold_count:"超出检查项",missing_count:"缺少证据",review_count:"需复核格数",
   edition:"卡片状态",output_size:"输出尺寸",pixels_retained:"保留像素",accepted_region_count:"着色片区",
   unique_transcribed:"实物编号数",total_views:"照片位置数",rev:"版本",
+  solution_count:"可行摆法数",truncated:"摆法已截断",group_name:"袋组号",strategy_label:"选窗策略",
+  bag_numbers:"整袋编号",windows_with_number:"含号证窗数",
 };
 
 function hideOutput() {$("#output").hidden=true;app.output=null;}

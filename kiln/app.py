@@ -172,6 +172,24 @@ def app():
         _, photo, _, tray = setup.tray(tray_id)
         return Response(grid_svg(tray, photo["width"], photo["height"]), mimetype="image/svg+xml")
 
+    @web.post("/api/firings/<firing_id>/reconcile")
+    def reconcile(firing_id):
+        data = body()
+        save = flag(data.pop("save", False), "保存拼合抄录")
+        result = compute(setup.reconcile_trays, firing_id, data, save)
+        return result, 201 if save and "entry" in result else 200
+
+    @web.post("/api/firings/<firing_id>/refire/suggestions")
+    def refire_suggestions(firing_id):
+        return compute(setup.refire_suggestions, firing_id, body())
+
+    @web.post("/api/firings/<firing_id>/refire/card")
+    def refire_card(firing_id):
+        data = body()
+        save = flag(data.pop("save", False), "保存复烧袋留样卡")
+        result = compute(setup.refire_preview, firing_id, data, save)
+        return result, 201 if save and "entry" in result else 200
+
     @web.post("/api/firings/<firing_id>/cards")
     def cards(firing_id):
         data = body()
