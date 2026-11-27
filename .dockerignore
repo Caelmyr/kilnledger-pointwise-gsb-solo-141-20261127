@@ -1,0 +1,5 @@
+.git
+.kiln-data
+.venv
+**/__pycache__
+scripts

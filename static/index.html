@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2eee5">
+  <title>釉样台 · KilnLedger</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/studio.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="釉样台首页">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span><strong>釉样台</strong><small>KILNLEDGER</small></span>
+    </a>
+    <nav class="top-tabs" aria-label="工作区">
+      <button class="top-tab active" data-view="studio" type="button">图像工作台</button>
+      <button class="top-tab" data-view="records" type="button">窑次留档</button>
+      <button class="top-tab" data-view="library" type="button">实物编号索引</button>
+    </nav>
+    <div class="head-actions">
+      <button class="quiet" id="help-open" type="button" aria-label="打开使用说明">使用说明</button>
+      <button class="primary" id="upload-open" type="button"><span aria-hidden="true">＋</span> 上传照片</button>
+    </div>
+  </header>
+  <main>
+    <div class="project-banner">
+      <div class="project-info">
+        <span class="eyebrow"><span></span> 窑次档案</span>
+        <div class="project-title">
+          <h1 id="firing-name">载入窑次</h1>
+          <button class="icon-button subtle" id="edit-firing" type="button" aria-label="编辑窑次">✎</button>
+        </div>
+        <p id="firing-caption"></p>
+      </div>
+      <div class="project-switch">
+        <label for="firing">当前窑次</label>
+        <div class="project-controls">
+          <select id="firing" aria-label="当前窑次"></select>
+          <button class="secondary" id="new-firing" type="button">新窑次</button>
+        </div>
+      </div>
+    </div>
+    <section id="studio" class="studio-grid" aria-label="图像工作台">
+      <aside class="film panel" aria-label="窑次照片">
+        <header class="panel-heading">
+          <h2>照片</h2>
+          <span id="photo-count" class="count">0</span>
+        </header>
+        <div class="filter-line">
+          <input type="search" id="photo-search" aria-label="搜索照片" placeholder="搜索照片">
+          <select id="photo-role" aria-label="筛选照片角色">
+            <option value="">全部</option><option value="overview">全景</option>
+            <option value="detail">细部</option><option value="reference">参考</option><option value="repeat">重拍</option>
+          </select>
+        </div>
+        <div class="photo-list" id="photo-list"></div>
+        <button class="import-tile" id="upload-from-film" type="button">＋ 添加照片</button>
+      </aside>
+      <section class="image-panel panel" aria-label="原图查看器">
+        <header class="panel-heading viewer-header">
+          <div><h2 id="photo-title">原照</h2><small id="photo-meta"></small></div>
+          <button type="button" class="quiet" id="edit-photo">照片信息</button>
+        </header>
+        <div class="image-tools" aria-label="选取工具">
+          <div class="tool-group">
+            <button type="button" class="draw-mode active" data-draw="box"><span>▧</span> 框选</button>
+            <button type="button" class="draw-mode" data-draw="points"><span>◇</span> 标点</button>
+            <button type="button" id="clear-drawing">清除</button>
+          </div>
+          <div class="tool-group">
+            <button type="button" id="zoom-out" aria-label="缩小照片">−</button>
+            <span id="zoom-value" aria-live="polite">适合窗口</span>
+            <button type="button" id="zoom-in" aria-label="放大照片">＋</button>
+            <button type="button" id="zoom-reset" aria-label="适合窗口">↺</button>
+          </div>
+        </div>
+        <div class="image-stage" id="image-stage">
+          <div id="empty-photo" class="empty-view" hidden><p>上传窑后照片开始检视</p><button class="secondary" id="upload-from-empty" type="button">选择图片</button></div>
+          <div id="image-wrap" class="image-wrap">
+            <img id="source-image" alt="当前窑次原照" draggable="false">
+            <svg id="drawing" class="drawing" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="原图选取层"></svg>
+          </div>
+        </div>
+        <footer class="image-footer">
+          <span id="position" aria-live="polite">待选择照片</span>
+          <span id="selection-brief">在原照上拖动框选样区</span>
+          <a id="original-link" target="_blank" rel="noopener" hidden>查看原图</a>
+        </footer>
+      </section>
+      <aside class="inspector panel" aria-label="图像处理与托盘工具">
+        <header class="panel-heading"><h2>检视工具</h2><span class="tool-indicator" aria-hidden="true"></span></header>
+        <nav class="inspector-tabs" aria-label="检视分类">
+          <button class="active" data-pane="analyze" type="button">图像测量</button>
+          <button data-pane="tray" type="button">托盘抄录</button>
+          <button data-pane="cards" type="button">留样卡 <span id="picks-count"></span></button>
+        </nav>
+        <div id="tool-body" class="tool-body"></div>
+      </aside>
+    </section>
+    <section id="records" class="records-grid" aria-label="窑次留档" hidden>
+      <article class="panel records-panel">
+        <header class="panel-heading"><h2>留档记录</h2><span class="count" id="record-count"></span></header>
+        <div class="record-toolbar"><label>记录类型 <select id="entry-kind" aria-label="记录类型"></select></label>
+          <button class="secondary" id="select-records" type="button">选择当前记录</button></div>
+        <div id="record-list"></div>
+      </article>
+      <article class="panel record-actions">
+        <header class="panel-heading"><h2>输出与核验</h2></header>
+        <div id="record-tools" class="tool-body"></div>
+      </article>
+    </section>
+    <section id="library" class="records-grid" aria-label="实物编号索引" hidden>
+      <article class="panel records-panel">
+        <header class="panel-heading"><h2>已抄录编号</h2><span class="count" id="lookup-count"></span></header>
+        <div id="lookup-results" class="tool-body"></div>
+      </article>
+      <article class="panel record-actions">
+        <header class="panel-heading"><h2>查询与制册</h2></header>
+        <div id="lookup-tools" class="tool-body"></div>
+      </article>
+    </section>
+    <section class="output panel" id="output" aria-live="polite" hidden></section>
+  </main>
+  <div class="toast" id="notice" role="status" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title">
+    <div class="dialog-top"><h2 id="dialog-title"></h2><button class="icon-button" id="dialog-close" type="button" aria-label="关闭">×</button></div>
+    <div class="dialog-body" id="dialog-body"></div>
+  </dialog>
+</body>
+</html>

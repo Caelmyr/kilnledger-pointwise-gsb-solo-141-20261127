@@ -1,0 +1,17 @@
+name: solo144-kilnledger
+services:
+  workbench:
+    build: .
+    image: solo144-kilnledger:local
+    network_mode: bridge
+    ports:
+      - "127.0.0.1:${KILN_HOST_PORT:-18444}:8080"
+    volumes:
+      - records:/store
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 4s
+      timeout: 2s
+      retries: 16
+volumes:
+  records:
