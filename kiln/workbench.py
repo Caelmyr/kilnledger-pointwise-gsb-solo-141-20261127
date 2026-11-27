@@ -9,7 +9,7 @@ from PIL import Image
 
 from . import (
     archive, boards, calibration, catalog, closeout, comparison, crazing, defects, detail, formulations,
-    layer, recipe, rectify, relief, restoration, samples, series, surface, target,
+    gridphase, layer, recipe, rectify, relief, restoration, samples, series, surface, target,
 )
 from .cards import Cards
 from .geometry import Ruler
@@ -47,6 +47,7 @@ ANALYSES = {
     "recipe": "返烧配方阵列",
     "crazing": "开片方向检查",
     "phases": "釉相分布",
+    "grid_phases": "格网釉相判读",
     "rectify": "试片校直",
     "relief": "双向掠射图",
     "target": "采集参考检查",
@@ -249,6 +250,12 @@ class Workbench:
             result, picture = formulations.inspect(image, settings, correction, ruler)
             if flag(settings.get("chart", False), "查看面积柱图"):
                 picture = formulations.distribution_plot(result)
+        elif kind == "grid_phases":
+            if flag(settings.get("legacy", False), "沿用普通按色样判读"):
+                result, picture = formulations.inspect(image, settings, correction, ruler)
+                result["mode"] = "legacy_color_samples"
+            else:
+                result, picture = gridphase.inspect(image, settings, correction)
         elif kind == "rectify":
             result, picture = rectify.straighten(image, settings)
         elif kind == "target":

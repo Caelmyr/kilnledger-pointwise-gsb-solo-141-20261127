@@ -544,6 +544,7 @@ const METRICS = {
   adjusted_px:"已调整像素",hold_count:"超出检查项",missing_count:"缺少证据",review_count:"需复核格数",
   edition:"卡片状态",output_size:"输出尺寸",pixels_retained:"保留像素",accepted_region_count:"着色片区",
   unique_transcribed:"实物编号数",total_views:"照片位置数",rev:"版本",
+  default_family:"默认采用的试样带方案",requested_family_feasible:"指定方案可行",
 };
 
 function hideOutput() {$("#output").hidden=true;app.output=null;}

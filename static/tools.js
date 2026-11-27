@@ -17,6 +17,7 @@ export const SHEETS = {
     palette:{label:"样片调色条",help:"输入参与的照片和样区，可生成按覆盖量或等宽的色条。",fields:[toggle("uniform","等宽色样",true),toggle("contact","输出带色签接触片",false)],type:"palette",json:true},
     cells:{label:"釉色一致性",help:"矩形样区分格，各格和整体颜色比较。",fields:[measure("rows","行数",3,2,8,1),measure("columns","列数",3,2,8,1),measure("tolerance","单格 ΔE 容差",5,.5,40)],region:true},
     phases:{label:"釉相分布",help:"两块或多块已知呈色作为参考。条纹区域含多种可能。",fields:[measure("gap","参照最小间距",1.5,.01,15),measure("minimum_area","连片大小",8,1,8000),toggle("chart","显示各相面积图",false)],type:"phases",region:true,json:true},
+    grid_phases:{label:"格网釉相判读",help:"按不超过八行八列的小格看同一表面。实底格归一相，其余留空；已确认同相的格保持边相连，并给暖横带/冷竖带交会的可同时成立判图。",fields:[measure("rows","行数",6,2,8,1),measure("columns","列数",6,2,8,1),measure("solid_coverage","实底格覆盖阈值",.62,.05,1),menu("band_policy","试样带策略",{horizontal:"默认暖釉横带居中",vertical:"改用冷釉竖带居中",both:"两带同时要求",none:"不强制试样带"},"horizontal"),toggle("legacy","沿用普通按色样判读",false)],type:"grid_phases",region:true,json:true},
     grades:{label:"样区评级",help:"将当前框区与用户指定的实物颜色参照比较。",fields:[measure("max_delta","允许色差",14,1,50),measure("min_gap","评级分辨间距",1,0,25)],type:"grades",json:true},
   },
   "表面与缺陷": {
@@ -50,7 +51,7 @@ export const LABELS = {...Object.fromEntries(Object.entries(SPECS).map(([k,v])=>
 
 export const CSV_KINDS = new Set([
   "color","comparison","texture","glare","pinholes","spot","ruler","line","marks","grades","coverage","palette",
-  "traverse","cells","recipe","crazing","phases","rectify","relief","target","layer","closeout",
+  "traverse","cells","recipe","crazing","phases","grid_phases","rectify","relief","target","layer","closeout",
 ]);
 
 const shrink = (photo,x0,y0,x1,y1) => [x0*photo.width,y0*photo.height,x1*photo.width,y1*photo.height].map(Math.round);
@@ -78,10 +79,19 @@ export function extendSettings(code, fields, photo, history, region, points) {
     fields.targets = [{name:"中性参考",region:current,mode:"neutral"}];
   } else if (spec.type === "palette") {
     fields.items = [{photo:photo.id,region:first,label:"色片甲"},{photo:photo.id,region:second,label:"色片乙"}];
-  } else if (spec.type === "phases" || spec.type === "grades") {
+  } else if (spec.type === "phases" || spec.type === "grades" || spec.type === "grid_phases") {
     const entries = [{name:"相甲",region:first},{name:"相乙",region:second}];
-    if (spec.type === "phases") fields.phases = entries;
+    if (spec.type === "phases" || spec.type === "grid_phases") fields.phases = entries;
     else {fields.targets = entries; fields.regions = [{name:"当前样区",region:current}];}
+    if (spec.type === "grid_phases") {
+      fields.groups = [];
+      fields.bands = [
+        {name:"暖釉横带",phase:"相甲",orientation:"horizontal",span:1,at:Math.floor(fields.rows/2)},
+        {name:"冷釉竖带",phase:"相乙",orientation:"vertical",span:1,at:Math.floor(fields.columns/2)},
+      ];
+      fields.area_gates = [];
+      fields.specimen_areas = [];
+    }
   } else if (spec.type === "marks") {
     const accepted = fields.shape === "point" ? coordinates.slice(0,1) : coordinates;
     fields.marks = [{name:fields.name,kind:fields.category,shape:fields.shape,
