@@ -363,20 +363,56 @@ function drawAnalysis() {
   const controls=[
     node("label",{class:"tool-select"},[node("span",{text:"测量工具"}),selection]),paragraph(spec.help),form.element,
   ];
+  let lastRunInput=null;
   if (spec.json) controls.push(details("高级设置",(node("div",{class:"tool-body"},[
     button("将当前选择写入参数",()=>{prefs.value=JSON.stringify(build(),null,2);},"secondary small-button"),
     prefs,
   ]))));
   const run=button("运行检视",event=>action(event,async()=>{
     const photoId=app.photo.id, mode=app.tool, input=settings();
+    lastRunInput=input;
     const result=await api(apiPhoto("/analysis/"+mode),{method:"POST",data:input});
     if (app.photo?.id!==photoId || app.tool!==mode) return;
-    app.output={...result,heading:SPECS[mode].label,data:result.analysis.result};
+    const data=result.analysis.result;
+    const actions = data && data.kind==="height_network" ? heightnetActions(input,mode,photoId) : null;
+    app.output={...result,heading:SPECS[mode].label,data,actions};
     showOutput(app.output);
   }),"primary","run-analysis");
+
+  function heightnetActions(currentInput, mode, photoId) {
+    const rerun = (overrides)=>action(null,async()=>{
+      const input={...settings(),...overrides};
+      lastRunInput=input;
+      const result=await api(apiPhoto("/analysis/"+mode),{method:"POST",data:input});
+      if (app.photo?.id!==photoId || app.tool!==mode) return;
+      const data=result.analysis.result;
+      app.output={...result,heading:SPECS[mode].label,data,
+        actions:heightnetActions(input,mode,photoId)};
+      showOutput(app.output);
+    });
+    const isAlt = currentInput.variant==="alternative";
+    const switchButton = button(isAlt ? "回到默认图（必留段优先）"
+      : "换另一套同样可用的图（交换唇/底取舍）",
+      ()=>rerun({variant:isAlt?"default":"alternative"}),"secondary small-button","heightnet-switch");
+    const q = currentInput.query || {};
+    const start=q.start||[1,0], end=q.end||[1,1];
+    const mk=(labelText,value)=>node("label",{class:"field heightnet-query-field"},[
+      node("span",{text:labelText}),
+      node("input",{type:"number",value,min:0,step:1,"aria-label":labelText,size:3})]);
+    const ar=mk("甲行",start[0]), ac=mk("甲列",start[1]);
+    const br=mk("乙行",end[0]), bc=mk("乙列",end[1]);
+    const step=mk("台阶高度",q.step ?? currentInput.step ?? .04);
+    const queryButton=button("查这两站的高差范围",()=>{
+      const num=f=>Number(f.querySelector("input").value);
+      rerun({query:{start:[num(ar),num(ac)],end:[num(br),num(bc)],step:num(step)},
+             variant:currentInput.variant||"default"});
+    },"primary small-button","heightnet-query");
+    return [switchButton, ar, ac, br, bc, step, queryButton];
+  }
   const save=button("归档结果",event=>action(event,async()=>{
     const photoId=app.photo.id, mode=app.tool;
-    const stored=await api(apiPhoto("/analysis/"+mode+"/save"),{method:"POST",data:{settings:settings()}});
+    const saveSettings = mode==="heightmap" && lastRunInput ? lastRunInput : settings();
+    const stored=await api(apiPhoto("/analysis/"+mode+"/save"),{method:"POST",data:{settings:saveSettings}});
     await reload(app.firing.id,photoId);
     const result=stored.entry.payload.result;
     showOutput({heading:stored.entry.title,data:result,entry:stored.entry,preview:stored.entry.artifact_sha?entryArtifact(stored.entry):null});
@@ -544,6 +580,9 @@ const METRICS = {
   adjusted_px:"已调整像素",hold_count:"超出检查项",missing_count:"缺少证据",review_count:"需复核格数",
   edition:"卡片状态",output_size:"输出尺寸",pixels_retained:"保留像素",accepted_region_count:"着色片区",
   unique_transcribed:"实物编号数",total_views:"照片位置数",rev:"版本",
+  verdict_zh:"台阶判定",range_text:"两站高差可能范围",default_tradeoff:"默认取舍",
+  variant:"当前图套",closed:"绕圈闭合",direct_complete:"有直接坡度资料",
+  data_note:"资料说明",missing_segment_names:"暂搁/缺直接坡度段",
 };
 
 function hideOutput() {$("#output").hidden=true;app.output=null;}

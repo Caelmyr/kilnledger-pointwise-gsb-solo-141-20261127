@@ -163,3 +163,18 @@ def preview_scale(result):
     for text, x in (("-15 deg", x0), ("0", center), ("+15 deg", x1 - 28)):
         draw.text((x, 109), text, fill="#493725")
     return image
+
+
+# The horizontal/vertical pair reconciliation lives in :mod:`kiln.heightnet`;
+# re-export the common entry points from the grazing-light module too.
+from .heightnet import (  # noqa: E402,F401
+    classify_step,
+    query_pair,
+    solve_network,
+    synthesize as synthesize_height_network,
+)
+
+height_network = solve_network
+solve_height_map = solve_network
+reconcile = solve_network
+relative_height_range = query_pair

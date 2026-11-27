@@ -9,7 +9,7 @@ from threading import BoundedSemaphore
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
-from . import archive, closeout, verification
+from . import archive, closeout, heightnet, verification
 from .imaging import MAX_UPLOAD_BYTES, png_bytes, thumbnail
 from .inputs import InputError, flag, obj, revision
 from .trays import grid_svg
@@ -143,6 +143,37 @@ def app():
     @web.post("/api/photos/<photo_id>/analysis/<kind>/save")
     def saved(photo_id, kind):
         return {"entry": compute(setup.save_result, photo_id, kind, body())}, 201
+
+    def height_network_api():
+        payload = body()
+        result, picture = compute(heightnet.synthesize, payload, None, None)
+        return {"result": result, "preview": preview(picture)}
+
+    web.add_url_rule("/api/height-network", "height_network", height_network_api, methods=["POST"])
+    web.add_url_rule("/api/heightmap", "heightmap_api", height_network_api, methods=["POST"])
+    web.add_url_rule("/api/height-map", "height_map_api", height_network_api, methods=["POST"])
+
+    @web.post("/api/entries/<entry_id>/height-query")
+    def saved_height_query(entry_id):
+        record = setup.store.entry(entry_id)
+        result = (record.get("payload") or {}).get("result") or {}
+        if result.get("kind") != "height_network":
+            raise InputError("这条记录不是双向合成高差图")
+        data = body()
+        start = data.get("start") or data.get("a") or data.get("from")
+        end = data.get("end") or data.get("b") or data.get("to")
+        if start is None or end is None:
+            query = obj(data.get("query") or {}, "测站查询")
+        else:
+            query = {"start": start, "end": end,
+                     "step": data.get("step") or data.get("threshold"),
+                     "direction": data.get("direction")}
+        fallback_step = (result.get("query") or {}).get("step")
+        answer = heightnet.query_pair(
+            result["rows"], result["columns"], result["edge_catalog"],
+            set(result["kept"]), query, fallback_step,
+            query.get("direction"), float(result.get("tolerance") or 0.0))
+        return {"entry_id": entry_id, "query": answer}
 
     @web.post("/api/photos/<photo_id>/selections")
     def select_image_region(photo_id):

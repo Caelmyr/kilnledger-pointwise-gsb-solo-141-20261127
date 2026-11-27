@@ -40,6 +40,7 @@ export const SHEETS = {
     comparison:{label:"共视差图",help:"原照与对照各用三个对应参照点。差图在原照坐标展示共同实底。",fields:[selectPhoto,measure("threshold","ΔE 阈值",8,.5,90),measure("minimum_area","最小片区",12,1,8000)],type:"pair",region:true,json:true},
     overlay:{label:"两片叠照",help:"原照与对照各用三个对应参照点。",fields:[selectPhoto,measure("opacity","叠照比例",.5,0,1)],type:"pair",region:true,json:true},
     relief:{label:"双向掠射图",help:"选一对相反灯向拍的图，输入三对对应点，可查看浮凸提示。",fields:[selectPhoto,measure("light_elevation","灯光离台角度",37,8,78),measure("slope_threshold","提示角度",6,.5,30),menu("output","输出",{tilt:"相对坡度",reflection:"反射光",confidence:"证据实底"},"tilt"),toggle("legend","色标",false)],type:"pair",region:true,json:true},
+    heightmap:{label:"双向合成高差图",help:"录入小格测站横、纵相邻方向的实底坡度（高差单位）与可接受误差，合成横竖读数共同满足、绕圈闭合的一张相对高差图。必留段优先；冲突边转暂搁并画成虚线缺资料段，可切换另一套交换取舍。运行后可直接查同行/列两站在所有可能高度图上的高差范围与台阶判定。",fields:[measure("tolerance","可接受误差 ±",.01,0,1000,.001),measure("step","台阶判定高度",.04,0,1000,.001),menu("prefer","默认取舍",{lip:"默认保窄起唇",base:"默认保宽底实测"},"lip"),menu("variant","采用图套",{default:"默认（必留段优先）",alternative:"另一套（交换唇/底）"},"default")],type:"heightnet",region:true,json:true},
     recipe:{label:"返烧配方阵列",help:"填基础釉及两个混合料。测量格按 A1、A2 的方式关联照片样区。",fields:[measure("rows","纵格数",4,2,6,1),measure("columns","横格数",4,2,6,1),measure("row_limit","纵向最高比例 %",40,.01,100),measure("column_limit","横向最高比例 %",40,.01,100),measure("grams","每格克数",20,2,500),measure("precision","秤可读精度",.1,.01,2)],type:"recipe",json:true}
   }
 };
@@ -108,6 +109,22 @@ export function extendSettings(code, fields, photo, history, region, points) {
     fields.origin = steps[0]; fields.tangent = steps[1]; fields.inward = steps[2];
     fields.outer = points.length >= 7 ? steps.slice(3,5) : steps.slice(0,2);
     fields.inner = points.length >= 7 ? steps.slice(5) : steps.slice(4,6);
+  } else if (spec.type === "heightnet") {
+    const tolerance = Number.isFinite(fields.tolerance) ? fields.tolerance : .01;
+    const step = Number.isFinite(fields.step) ? fields.step : .04;
+    fields = {
+      mode:"network", rows:2, columns:4, tolerance, unit:"mm",
+      prefer:fields.prefer || "lip", variant:fields.variant || "default",
+      station_spacing_mm:12.5, region:current,
+      horizontal:[
+        [{value:.16,label:"窄起唇",required:true}, .06, .02],
+        [{value:.02,label:"宽底实测甲"}, .01, 0],
+      ],
+      vertical:[
+        [{value:0,required:true}, {value:-.08,required:true}, -.13, -.15],
+      ],
+      query:{start:[1,0], end:[1,1], step},
+    };
   } else if (spec.type === "pair") {
     const other = history.find(item=>item.id===fields.comparison);
     fields.left_points = points.length >= 3 ? points.slice(0,3) : anchorPoints(photo);

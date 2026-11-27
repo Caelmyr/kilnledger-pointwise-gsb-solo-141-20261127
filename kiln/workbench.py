@@ -9,7 +9,7 @@ from PIL import Image
 
 from . import (
     archive, boards, calibration, catalog, closeout, comparison, crazing, defects, detail, formulations,
-    layer, recipe, rectify, relief, restoration, samples, series, surface, target,
+    heightnet, layer, recipe, rectify, relief, restoration, samples, series, surface, target,
 )
 from .cards import Cards
 from .geometry import Ruler
@@ -49,6 +49,8 @@ ANALYSES = {
     "phases": "釉相分布",
     "rectify": "试片校直",
     "relief": "双向掠射图",
+    "heightmap": "双向合成高差图",
+    "heightnet": "测站闭合高差网",
     "target": "采集参考检查",
     "layer": "剖面厚度",
 }
@@ -56,6 +58,12 @@ NAMES = {
     "tray": "托盘抄录", "cards": "留样卡", "board": "对照展板", "packet": "物证封存",
     "catalog": "已抄录编号图册", "closeout": "留档检核单", "selection": "保存的影像位置",
     **ANALYSES,
+}
+
+HEIGHT_KIND_ALIASES = {
+    "height-map": "heightmap", "height_map": "heightmap", "heights": "heightmap",
+    "survey": "heightmap", "levelnet": "heightmap", "levels": "heightmap",
+    "terrain": "heightmap", "gridrelief": "heightmap", "heightnetwork": "heightnet",
 }
 
 
@@ -180,6 +188,8 @@ class Workbench:
 
     def analyze(self, photo_id, kind, user):
         settings = obj(user, "图像分析参数")
+        if kind in HEIGHT_KIND_ALIASES:
+            kind = "heightmap"
         photo, image = self.photo_and_image(photo_id)
         if kind not in ANALYSES:
             raise InputError("未识别的图像工具")
@@ -202,7 +212,9 @@ class Workbench:
         extra_sources = []
         picture = None
 
-        if kind == "calibration":
+        if kind in ("heightmap", "heightnet") or (kind == "relief" and heightnet.is_network_payload(settings)):
+            result, picture = heightnet.synthesize(settings, image, ruler)
+        elif kind == "calibration":
             result = calibration.fit_correction(image, settings.get("references")).to_json()
             picture = calibration.corrected_image(image, calibration.Correction.from_json(result))
         elif kind == "ruler":
