@@ -1,5 +1,6 @@
 import {ROLE, STATE, PURPOSE, SHEETS, SPECS, LABELS, CSV_KINDS, measure, menu, string, toggle,
         centered, anchorPoints, extendSettings} from "./tools.js";
+import {openRefireWorkbench} from "./refire.js";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -389,6 +390,32 @@ function drawAnalysis() {
     controls.push(saved.element);
   }
   controls.push(buttonRow(run,save,archiveSelection));
+  if (app.tool === "recipe") {
+    const refireCtx = () => ({
+      photo: app.photo, firingId: app.firing?.id, getRegion: () => app.region, api, notice,
+      defaults: {
+        precision: document.querySelector("#tool-body input[name=precision]")?.value || "0.1",
+        cup_grams: document.querySelector("#tool-body input[name=grams]")?.value || "20",
+      },
+      onSaved: () => reload(app.firing.id, app.photo?.id),
+    });
+    const refireEntry = node("div", {class:"refire-entry", "aria-label":"复烧选方与称料台入口"}, [
+      node("strong", {text:"复烧选方 · 整图调整 / 色差 / 存量 / 称料核对"}),
+      node("p", {class:"help", text:
+        "框出目标照要保的颜色、加入旧实烧格，求同一份 Lab 明度/红绿调整下每处都过色差限额、各杯合计不超存量的方案；可在保大片底色与保窄色带的方案间切换看清代价；采用后录入第一杯实数，重新核对剩余杯（半格容差、待核即停）。"}),
+      node("div", {class:"button-row"}, [
+        button("打开复烧选方与称料台", ev=>action(ev, async()=>{
+          await openRefireWorkbench(refireCtx());
+        }), "primary", "open-refire"),
+        button("一键载入示范复烧情景", ev=>action(ev, async()=>{
+          const workbench = await openRefireWorkbench(refireCtx());
+          await workbench.helpers.runDemo(null);
+        }, "示范复烧情景已载入"), "secondary", "open-refire-demo"),
+      ]),
+    ]);
+    const oldFormLabel = node("p", {class:"rf-old-form-label", text:"手填配方阵列 · 出单杯表（原方式，照旧）"});
+    controls.splice(2, 0, refireEntry, oldFormLabel);
+  }
   $("#tool-body").replaceChildren(...controls);
 }
 

@@ -9,7 +9,7 @@ from PIL import Image
 
 from . import (
     archive, boards, calibration, catalog, closeout, comparison, crazing, defects, detail, formulations,
-    layer, recipe, rectify, relief, restoration, samples, series, surface, target,
+    layer, recipe, rectify, refire, relief, restoration, samples, series, surface, target,
 )
 from .cards import Cards
 from .geometry import Ruler
@@ -426,6 +426,27 @@ class Workbench:
 
     def trends(self, settings):
         return series.build_series(self.store, settings)
+
+    def refire_options(self, firing_id):
+        """List fired witness cells stored in archived 返烧配方阵列 records."""
+        self.store.firing(firing_id)
+        candidates = []
+        entries = []
+        for record in self.store.entries(firing_id, kind="recipe"):
+            cells = refire.candidates_from_entry(record)
+            if not cells:
+                continue
+            entries.append({"entry_id": record["id"], "title": record["title"],
+                            "revision": record["revision"], "cell_count": len(cells)})
+            for cell in cells:
+                candidates.append({**cell, "entry_title": record["title"]})
+        return {"entries": entries, "candidates": candidates, "demo": refire.demo_scenario()}
+
+    def refire_plan(self, settings):
+        return refire.plan_refire(settings)
+
+    def refire_recheck(self, settings):
+        return refire.recheck_weighing(settings)
 
     def packet(self, firing_id, settings):
         current = self.store.firing(firing_id)

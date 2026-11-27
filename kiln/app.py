@@ -2,9 +2,15 @@
 
 from base64 import b64encode
 from io import BytesIO
+import mimetypes
 import os
 from pathlib import Path
 from threading import BoundedSemaphore
+
+# Slim images can ship an incomplete mime.types; nosniff would then block the
+# ES module / stylesheet, so pin the types the workbench needs.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
@@ -205,6 +211,37 @@ def app():
         save = flag(data.pop("save", False), "保存检核单")
         return compute(setup.closeout, firing_id, data, save)
 
+    @web.post("/api/refire/plan")
+    @web.post("/api/refire/plans")
+    def refire_plan():
+        return setup.refire_plan(body())
+
+    @web.post("/api/refire/weigh")
+    @web.post("/api/refire/recheck")
+    @web.post("/api/refire/reweigh")
+    @web.post("/api/refire/weighing")
+    def refire_weigh():
+        return setup.refire_recheck(body())
+
+    @web.get("/api/refire/demo")
+    def refire_demo():
+        from .refire import demo_scenario
+        return {"scenario": demo_scenario()}
+
+    @web.get("/api/firings/<firing_id>/refire/options")
+    def refire_options(firing_id):
+        return setup.refire_options(firing_id)
+
+    @web.post("/api/firings/<firing_id>/refire/plan")
+    def firing_refire_plan(firing_id):
+        setup.store.firing(firing_id)
+        return setup.refire_plan(body())
+
+    @web.post("/api/firings/<firing_id>/refire/weigh")
+    def firing_refire_weigh(firing_id):
+        setup.store.firing(firing_id)
+        return setup.refire_recheck(body())
+
     @web.post("/api/trends")
     def trends():
         data = body()
@@ -273,6 +310,17 @@ def app():
                          mimetype="application/json")
 
     return web
+
+
+_wsgi_app = None
+
+
+def application(environ, start_response):
+    """Lazy WSGI callable for ``waitress-serve kiln.app:application``."""
+    global _wsgi_app
+    if _wsgi_app is None:
+        _wsgi_app = app()
+    return _wsgi_app(environ, start_response)
 
 
 if __name__ == "__main__":

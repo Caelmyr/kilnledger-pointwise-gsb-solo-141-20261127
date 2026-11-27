@@ -10,6 +10,15 @@ from .calibration import analyze, delta_e
 from .geometry import Region
 from .imaging import crop_region, flatten, thumbnail
 from .inputs import InputError, distinct, in_project, integer, key, obj, optional_text, seq, text
+from .refire import (
+    candidates_from_entry,
+    plan_refire,
+    recheck_weighing,
+    refire_plan,
+    recheck_weights,
+    verify_weights,
+    weigh_table,
+)
 
 
 MAX_CELLS = 36
@@ -211,8 +220,41 @@ def recipe_map(mixes, grid, details):
     return result
 
 
+def resolve_refire(data, photo, image, correction, store):
+    """Measure boxed target regions and collect stored witness cells, then plan."""
+    block = obj(data.get("refire", data), "复烧选方")
+    settings = dict(block)
+    identity = correction.identity()
+    measured_targets = []
+    for item in seq(block.get("targets"), "要保的颜色", minimum=1, maximum=12):
+        target = dict(obj(item, "要保颜色"))
+        if target.get("lab") is None and target.get("region") is not None:
+            model = correction if block.get("calibrated") else identity
+            reading = analyze(image, target["region"], model, bins=8)
+            target["lab"] = reading["lab"]
+            target["swatch"] = reading["swatch"]
+        measured_targets.append(target)
+    settings["targets"] = measured_targets
+
+    if settings.get("candidates") is None and settings.get("cells") is None:
+        witnesses = []
+        for record in store.entries(photo["firing_id"], kind="recipe"):
+            witnesses.extend(candidates_from_entry(record))
+        if not witnesses:
+            raise InputError("还没有可对照的旧实烧格，请先归档返烧配方阵列或直接给出 candidates")
+        settings["candidates"] = witnesses
+    plan = plan_refire(settings)
+    if block.get("weigh"):
+        plan["weighing"] = recheck_weighing({**block["weigh"], "plan": plan.get("plan")})
+    return plan
+
+
 def matrix(photo, image, correction, settings, store, read_photo):
     data = obj(settings, "返烧配方表")
+    # A refire-only request does not need a freshly hand-filled step matrix.
+    if isinstance(data.get("refire"), dict) and data.get("base") is None:
+        plan = resolve_refire(data, photo, image, correction, store)
+        return {"refire": plan}, None, []
     mixes = TestGrid.read(data)
     cells = mixes.grid()
     details, sources = finish_readings(cells, photo, image, correction, data, store, read_photo)
@@ -224,11 +266,14 @@ def matrix(photo, image, correction, settings, store, read_photo):
             item["reading"] = reading
             if baseline:
                 reading["delta_e_from_a1"] = round(float(delta_e(reading["lab"], baseline[1]["lab"])), 4)
-    return {
+    result = {
         "mixes": mixes.as_json(), "cells": cells, "measured_cells": len(details),
         "usable_formulae": sum(item["status"] == "weighable" for item in cells),
         "ranges": {
             "maximum_axis_mix": [round(float(mixes.row_limit), 6), round(float(mixes.column_limit), 6)],
             "baseline_observed": baseline is not None,
         },
-    }, recipe_map(mixes, cells, details), sources
+    }
+    if isinstance(data.get("refire"), dict):
+        result["refire"] = resolve_refire(data, photo, image, correction, store)
+    return result, recipe_map(mixes, cells, details), sources

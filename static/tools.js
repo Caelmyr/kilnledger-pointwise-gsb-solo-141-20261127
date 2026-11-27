@@ -40,7 +40,7 @@ export const SHEETS = {
     comparison:{label:"共视差图",help:"原照与对照各用三个对应参照点。差图在原照坐标展示共同实底。",fields:[selectPhoto,measure("threshold","ΔE 阈值",8,.5,90),measure("minimum_area","最小片区",12,1,8000)],type:"pair",region:true,json:true},
     overlay:{label:"两片叠照",help:"原照与对照各用三个对应参照点。",fields:[selectPhoto,measure("opacity","叠照比例",.5,0,1)],type:"pair",region:true,json:true},
     relief:{label:"双向掠射图",help:"选一对相反灯向拍的图，输入三对对应点，可查看浮凸提示。",fields:[selectPhoto,measure("light_elevation","灯光离台角度",37,8,78),measure("slope_threshold","提示角度",6,.5,30),menu("output","输出",{tilt:"相对坡度",reflection:"反射光",confidence:"证据实底"},"tilt"),toggle("legend","色标",false)],type:"pair",region:true,json:true},
-    recipe:{label:"返烧配方阵列",help:"填基础釉及两个混合料。测量格按 A1、A2 的方式关联照片样区。",fields:[measure("rows","纵格数",4,2,6,1),measure("columns","横格数",4,2,6,1),measure("row_limit","纵向最高比例 %",40,.01,100),measure("column_limit","横向最高比例 %",40,.01,100),measure("grams","每格克数",20,2,500),measure("precision","秤可读精度",.1,.01,2)],type:"recipe",json:true}
+    recipe:{label:"返烧配方阵列",help:"手填基础釉及两个混合料可出单杯表（照旧）。新流程可用下方“复烧选方与称料台”：框目标色、选旧实烧格、给 L/红绿调整范围与存量，出整图调整、各处 ΔE 与待核称量表。测量格按 A1、A2 关联照片样区。",fields:[measure("rows","纵格数",4,2,6,1),measure("columns","横格数",4,2,6,1),measure("row_limit","纵向最高比例 %",40,.01,100),measure("column_limit","横向最高比例 %",40,.01,100),measure("grams","每格克数",20,2,500),measure("precision","秤可读精度",.1,.01,2)],type:"recipe",json:true}
   }
 };
 
